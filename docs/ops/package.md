@@ -708,6 +708,38 @@ Original-Maintainer: Sudo Maintainers <sudo@packages.debian.org>
 
     有一些时候，我们不希望做软件包操作的时候出现交互行为，例如在打包容器或虚拟机镜像时。此时可以使用 `DEBIAN_FRONTEND=noninteractive` 限制 debconf 的前端为 `noninteractive`（不提问任何问题）。
 
+!!! note "ucf" {#ucf}
+
+    [ucf（**U**pdate **C**onfiguration **F**ile）](https://packages.debian.org/trixie/ucf) 和 `conffiles` 类似，是用来提供软件包的配置文件的机制。和 `conffiles` 不同的是，`conffiles` 安装的配置是静态的，而 `ucf` 的机制更加灵活一些，它支持配置文件在软件包安装时动态修改，然后软件包在 `postinst` 阶段调用 `ucf` 安装到预期位置。例如 [`openssh-server` 包](packages.debian.org/trixie/openssh-server) 就在 `postinst` 脚本中使用 `ucf` 安装了 `/etc/ssh/sshd_config`：
+
+    ```sh
+    new_config="$(mktemp)"
+    cp -aZ /usr/share/openssh/sshd_config "$new_config"
+    if [ "$permit_root_login" != true ]; then
+    	sed -i 's/^#*PermitRootLogin .*/PermitRootLogin yes/' \
+    		"$new_config"
+    fi
+    if [ "$password_authentication" != true ]; then
+    	sed -i 's/^#PasswordAuthentication .*/PasswordAuthentication no/' \
+    		"$new_config"
+    fi
+    mkdir -pZ /etc/ssh
+    ucf --three-way --debconf-ok \
+    	--sum-file /usr/share/openssh/sshd_config.md5sum \
+    	"$new_config" /etc/ssh/sshd_config
+    ucfr openssh-server /etc/ssh/sshd_config
+    ```
+
+    用 `ucf` 安装的配置文件不会被 `dpkg` 索引。可以用 `ucfq` 查询某个配置文件的状态：
+
+    ```console
+    $ ucfq /etc/ssh/sshd_config
+    Configuration file                            Package             Exists Changed
+    /etc/ssh/sshd_config                          openssh-server      Yes    Yes
+    ```
+
+    如果配置文件被用户修改，更新的时候就会交互式与用户确认是要更新配置，还是保留。当然，对支持引用目录中自定义配置的软件，如果按照[上文的建议](#conf-d-over-direct-edit)来做的话，就不会有更新时候纠结要保留还是覆盖的烦恼了。
+
 ### 获取软件包源码 {#apt-source}
 
 Debian 目前大多数的包的源代码都可以在 Debian Salsa GitLab 上找到，可以在 [Debian Package Tracker](https://tracker.debian.org/) 上找到相关信息。
